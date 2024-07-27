@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js Cat Depth Effect with Advanced Controls</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .slider-container {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="slider-container">
+            <label for="bulgeIntensity">Bulge Intensity: </label>
+            <input type="range" id="bulgeIntensity" min="0" max="1" step="0.01" value="0.3">
+            <span id="bulgeIntensityValue">0.71</span>
+        </div>
+        <div class="slider-container">
+            <label for="mouseEffect">Mouse Effect: </label>
+            <input type="range" id="mouseEffect" min="0" max="0.5" step="0.01" value="0.1">
+            <span id="mouseEffectValue">0..39</span>
+        </div>
+        <div class="slider-container">
+            <label for="swirlIntensity">Swirl Intensity: </label>
+            <input type="range" id="swirlIntensity" min="0" max="0.2" step="0.01" value="0.05">
+            <span id="swirlIntensityValue">0.0</span>
+        </div>
+        <div class="slider-container">
+            <label for="depthIntensity">Depth Intensity: </label>
+            <input type="range" id="depthIntensity" min="0" max="1" step="0.01" value="0.6">
+            <span id="depthIntensityValue">0.89</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshDistance">Mesh Distance: </label>
+            <input type="range" id="meshDistance" min="0.1" max="2" step="0.01" value="0.8">
+            <span id="meshDistanceValue">0.32</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshSize">Mesh Size: </label>
+            <input type="range" id="meshSize" min="1" max="10" step="0.1" value="4">
+            <span id="meshSizeValue">2.4</span>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Set up the scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Load the cat image texture
+        const loader = new THREE.TextureLoader();
+	const texture = loader.load(
+	    'https://cdn.discordapp.com/attachments/976997500349186119/1266525453724811294/idiom_bytes_draw_a_gritty_dark_high-density_pixelated_fantasy_w_c45541fc-fca3-4c5e-976c-f6d999fb64f5.png?ex=66a5773f&is=66a425bf&hm=f0480d24cfe10ed8362d0184fcc9a1b7ae76027580e343d80af47874bd21029a&',
+	    function(texture) {
+		console.log('Texture loaded successfully');
+		texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+	    },
+	    undefined,
+	    function(error) {
+		console.error('Error loading texture:', error);
+		console.error(error.target.src); // This will show the attempted load path
+	    }
+	);
+
+        // Define shaders
+        const vertexShader = `
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            void main() {
+                vUv = uv;
+                vPosition = position;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+
+        const fragmentShader = `
+            uniform sampler2D textureSampler;
+            uniform vec2 mousePos;
+            uniform float bulgeIntensity;
+            uniform float mouseEffect;
+            uniform float swirlIntensity;
+            uniform float depthIntensity;
+            varying vec2 vUv;
+            varying vec3 vPosition;
+            
+            void main() {
+                vec2 uv = vUv;
+                
+                // Create a adjustable static bulge effect
+                float bulge = bulgeIntensity * (1.0 - distance(vPosition.xy, vec2(0.0)));
+                
+                // Add adjustable mouse-based distortion
+                vec2 mouseOffset = (mousePos - 0.5) * mouseEffect;
+                uv += vPosition.xy * bulge - mouseOffset * (1.0 - distance(vPosition.xy, vec2(0.0)));
+                
+                // Add an adjustable swirl effect
+                float angle = atan(vPosition.y, vPosition.x);
+                float radius = length(vPosition.xy);
+                float swirl = swirlIntensity * sin(10.0 * angle) * smoothstep(0.0, 0.5, radius);
+                uv += vec2(swirl * vPosition.y, -swirl * vPosition.x);
+                
+                // Sample the texture
+                vec4 texColor = texture2D(textureSampler, uv);
+                
+                // Adjustable depth effect
+                float depth = smoothstep(1.0, 0.0, length(vPosition.xy));
+                texColor.rgb *= mix(1.0 - depthIntensity, 1.0 + depthIntensity * 0.2, depth);
+                
+                gl_FragColor = texColor;
+            }
+        `;
+
+        // Create a custom shader material
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                textureSampler: { value: texture },
+                mousePos: { value: new THREE.Vector2(0.5, 0.5) },
+                bulgeIntensity: { value: 0.3 },
+                mouseEffect: { value: 0.1 },
+                swirlIntensity: { value: 0.05 },
+                depthIntensity: { value: 0.6 }
+            },
+            vertexShader: vertexShader,
+            fragmentShader: fragmentShader
+        });
+
+        // Create initial geometry
+        let geometry = new THREE.PlaneGeometry(4, 4, 200, 200);
+
+        // Create a plane mesh with the geometry and material
+        let plane = new THREE.Mesh(geometry, material);
+        scene.add(plane);
+
+        camera.position.z = 0.8;
+
+        // Mouse move event listener
+        function onMouseMove(event) {
+            material.uniforms.mousePos.value.x = event.clientX / window.innerWidth;
+            material.uniforms.mousePos.value.y = 1 - (event.clientY / window.innerHeight); // Invert Y
+        }
+        window.addEventListener('mousemove', onMouseMove);
+
+        // Slider event listeners
+        document.getElementById('bulgeIntensity').addEventListener('input', function(e) {
+            material.uniforms.bulgeIntensity.value = parseFloat(e.target.value);
+            document.getElementById('bulgeIntensityValue').textContent = e.target.value;
+        });
+
+        document.getElementById('mouseEffect').addEventListener('input', function(e) {
+            material.uniforms.mouseEffect.value = parseFloat(e.target.value);
+            document.getElementById('mouseEffectValue').textContent = e.target.value;
+        });
+
+        document.getElementById('swirlIntensity').addEventListener('input', function(e) {
+            material.uniforms.swirlIntensity.value = parseFloat(e.target.value);
+            document.getElementById('swirlIntensityValue').textContent = e.target.value;
+        });
+
+        document.getElementById('depthIntensity').addEventListener('input', function(e) {
+            material.uniforms.depthIntensity.value = parseFloat(e.target.value);
+            document.getElementById('depthIntensityValue').textContent = e.target.value;
+        });
+
+        document.getElementById('meshDistance').addEventListener('input', function(e) {
+            camera.position.z = parseFloat(e.target.value);
+            document.getElementById('meshDistanceValue').textContent = e.target.value;
+        });
+
+        document.getElementById('meshSize').addEventListener('input', function(e) {
+            const size = parseFloat(e.target.value);
+            scene.remove(plane);
+            geometry.dispose();
+            geometry = new THREE.PlaneGeometry(size, size, 200, 200);
+            plane = new THREE.Mesh(geometry, material);
+            scene.add(plane);
+            document.getElementById('meshSizeValue').textContent = e.target.value;
+        });
+
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        // Start animation
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
