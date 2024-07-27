@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js Depth Map Displacement with Mouse Control</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .slider-container {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="slider-container">
+            <label for="bulgeIntensity">Bulge Intensity: </label>
+            <input type="range" id="bulgeIntensity" min="0" max="0.1" step="0.001" value="0.02">
+            <span id="bulgeIntensityValue">0.02</span>
+        </div>
+        <div class="slider-container">
+            <label for="mouseEffect">Mouse Effect: </label>
+            <input type="range" id="mouseEffect" min="0" max="0.5" step="0.001" value="0.035">
+            <span id="mouseEffectValue">0.035</span>
+        </div>
+        <div class="slider-container">
+            <label for="depthIntensity">Depth Intensity: </label>
+            <input type="range" id="depthIntensity" min="0" max="1.0" step="0.001" value="0.23">
+            <span id="depthIntensityValue">0.23</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshDistance">Mesh Distance: </label>
+            <input type="range" id="meshDistance" min="0.1" max="5" step="0.01" value="1.56">
+            <span id="meshDistanceValue">1.56</span>
+        </div>
+        <div class="slider-container">
+            <label for="displacementScale">Displacement Scale: </label>
+            <input type="range" id="displacementScale" min="0" max="1" step="0.01" value="0.1">
+            <span id="displacementScaleValue">0.1</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshDetail">Mesh Detail: </label>
+            <input type="range" id="meshDetail" min="10" max="500" step="10" value="200">
+            <span id="meshDetailValue">200</span>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Set up the scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        let mesh;
+        let displacementScale = 0.1;
+        let meshDetail = 200;
+
+        // Load the textures
+        const loader = new THREE.TextureLoader();
+        const colorTexture = loader.load('depth_sim.png');
+        const depthTexture = loader.load('depth_sim_depth_map', createDisplacedMesh);
+
+        // Define shaders
+        const vertexShader = `
+            varying vec2 vUv;
+            varying vec3 vViewPosition;
+            
+            void main() {
+                vUv = uv;
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                gl_Position = projectionMatrix * mvPosition;
+                vViewPosition = -mvPosition.xyz;
+            }
+        `;
+
+        const fragmentShader = `
+            uniform sampler2D colorTexture;
+            uniform sampler2D depthMap;
+            uniform vec2 mousePos;
+            uniform float mouseEffect;
+            uniform float bulgeIntensity;
+            uniform float depthIntensity;
+            
+            varying vec2 vUv;
+            varying vec3 vViewPosition;
+            
+            void main() {
+                vec2 uv = vUv;
+                
+                // Apply bulge effect
+                float bulge = bulgeIntensity * (1.0 - length(vViewPosition.xy));
+                uv += vViewPosition.xy * bulge;
+                
+                // Apply mouse effect
+                vec2 mouseOffset = (mousePos - 0.5) * mouseEffect;
+                uv += mouseOffset * (1.0 - length(vViewPosition.xy));
+                
+                // Sample color and depth
+                vec4 texColor = texture2D(colorTexture, uv);
+                float depth = texture2D(depthMap, uv).r;
+                
+                // Apply depth effect
+                texColor.rgb *= mix(1.0 - depthIntensity, 1.0 + depthIntensity * 0.2, depth);
+                
+                gl_FragColor = texColor;
+            }
+        `;
+
+        function createDisplacedMesh() {
+            if (mesh) scene.remove(mesh);
+
+            const geometry = new THREE.PlaneGeometry(2, 2, meshDetail, meshDetail);
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    colorTexture: { value: colorTexture },
+                    depthMap: { value: depthTexture },
+                    mousePos: { value: new THREE.Vector2(0.5, 0.5) },
+                    mouseEffect: { value: 0.035 },
+                    bulgeIntensity: { value: 0.02 },
+                    depthIntensity: { value: 0.23 }
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                side: THREE.DoubleSide
+            });
+
+            mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            // Apply displacement
+            const displacementMap = new THREE.TextureLoader().load('depth_sim_depth_map.png', function(texture) {
+                applyDisplacement(geometry, texture);
+            });
+        }
+
+        function applyDisplacement(geometry, texture) {
+            const img = texture.image;
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            context.drawImage(img, 0, 0);
+            const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            const pixels = imageData.data;
+
+            const vertices = geometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = (vertices[i] + 1) / 2;
+                const y = (vertices[i + 1] + 1) / 2;
+                const pixelIndex = (Math.floor(y * img.height) * img.width + Math.floor(x * img.width)) * 4;
+                const height = pixels[pixelIndex] / 255;
+                vertices[i + 2] = height * displacementScale;
+            }
+            geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
+        }
+
+        camera.position.z = 1.56;
+
+        // Mouse move event listener
+        function onMouseMove(event) {
+            const mousePos = new THREE.Vector2(
+                event.clientX / window.innerWidth,
+                1 - (event.clientY / window.innerHeight)
+            );
+            if (mesh) mesh.material.uniforms.mousePos.value = mousePos;
+        }
+        window.addEventListener('mousemove', onMouseMove);
+
+        // Slider event listeners
+        document.getElementById('bulgeIntensity').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            if (mesh) mesh.material.uniforms.bulgeIntensity.value = value;
+            document.getElementById('bulgeIntensityValue').textContent = value.toFixed(3);
+        });
+
+        document.getElementById('mouseEffect').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            if (mesh) mesh.material.uniforms.mouseEffect.value = value;
+            document.getElementById('mouseEffectValue').textContent = value.toFixed(3);
+        });
+
+        document.getElementById('depthIntensity').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            if (mesh) mesh.material.uniforms.depthIntensity.value = value;
+            document.getElementById('depthIntensityValue').textContent = value.toFixed(3);
+        });
+
+        document.getElementById('meshDistance').addEventListener('input', function(e) {
+            camera.position.z = parseFloat(e.target.value);
+            document.getElementById('meshDistanceValue').textContent = e.target.value;
+        });
+
+        document.getElementById('displacementScale').addEventListener('input', function(e) {
+            displacementScale = parseFloat(e.target.value);
+            document.getElementById('displacementScaleValue').textContent = displacementScale.toFixed(2);
+            createDisplacedMesh();
+        });
+
+        document.getElementById('meshDetail').addEventListener('input', function(e) {
+            meshDetail = parseInt(e.target.value);
+            document.getElementById('meshDetailValue').textContent = meshDetail;
+            createDisplacedMesh();
+        });
+
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

@@ -64,18 +64,18 @@
 
         // Load the cat image texture
         const loader = new THREE.TextureLoader();
-	const texture = loader.load(
-	    'https://cdn.discordapp.com/attachments/976997500349186119/1266525453724811294/idiom_bytes_draw_a_gritty_dark_high-density_pixelated_fantasy_w_c45541fc-fca3-4c5e-976c-f6d999fb64f5.png?ex=66a5773f&is=66a425bf&hm=f0480d24cfe10ed8362d0184fcc9a1b7ae76027580e343d80af47874bd21029a&',
-	    function(texture) {
-		console.log('Texture loaded successfully');
-		texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-	    },
-	    undefined,
-	    function(error) {
-		console.error('Error loading texture:', error);
-		console.error(error.target.src); // This will show the attempted load path
-	    }
-	);
+        const texture = loader.load(
+            'depth_sim.png',
+            function(texture) {
+            console.log('Texture loaded successfully');
+            texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+            },
+            undefined,
+            function(error) {
+            console.error('Error loading texture:', error);
+            console.error(error.target.src); // This will show the attempted load path
+            }
+        );
 
         // Define shaders
         const vertexShader = `
