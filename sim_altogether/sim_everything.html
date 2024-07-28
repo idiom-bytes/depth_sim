@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epic Duel Flags with Depth Displacement Background</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #backgroundCanvas { position: fixed; top: 0; left: 0; z-index: -1; }
+        #content { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            height: 100vh; 
+            position: relative; 
+            z-index: 1;
+        }
+        .container { 
+            width: 400px; 
+            height: 300px; 
+            margin: 10px; 
+            position: relative; 
+            overflow: hidden; 
+        }
+        #container1 { background-color: rgba(128, 0, 128, 0.1); }
+        #container2 { background-color: rgba(255, 255, 0, 0.1); }
+        canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+    </style>
+</head>
+<body>
+    <canvas id="backgroundCanvas"></canvas>
+    <div id="content">
+        <div id="container1" class="container"></div>
+        <div id="container2" class="container"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scenes = [], cameras = [], renderers = [], flags = [];
+        let backgroundScene, backgroundCamera, backgroundRenderer, backgroundMesh;
+        let mouseX = 0, mouseY = 0;
+        let targetRotationY = 0, targetRotationX = 0;
+
+        function init() {
+            initBackground();
+            initFlags();
+            window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('mousemove', onDocumentMouseMove, false);
+            animate();
+        }
+
+        function initBackground() {
+            backgroundScene = new THREE.Scene();
+            backgroundCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            backgroundRenderer = new THREE.WebGLRenderer({ canvas: document.getElementById('backgroundCanvas') });
+            backgroundRenderer.setSize(window.innerWidth, window.innerHeight);
+
+            const loader = new THREE.TextureLoader();
+            const colorTexture = loader.load('depth_sim.png');
+            const depthTexture = loader.load('depth_sim_depth_map.png');
+
+            const geometry = new THREE.PlaneGeometry(3, 3, 500, 500);
+            const material = new THREE.MeshPhongMaterial({
+                map: colorTexture,
+                displacementMap: depthTexture,
+                displacementScale: 0.3,
+                side: THREE.DoubleSide
+            });
+
+            backgroundMesh = new THREE.Mesh(geometry, material);
+            backgroundScene.add(backgroundMesh);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            backgroundScene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            backgroundScene.add(directionalLight);
+
+            backgroundCamera.position.z = 2;
+        }
+
+        function initFlags() {
+            const containers = [document.getElementById('container1'), document.getElementById('container2')];
+
+            containers.forEach((container, index) => {
+                const scene = new THREE.Scene();
+                scenes.push(scene);
+
+                const aspect = container.clientWidth / container.clientHeight;
+                const camera = new THREE.OrthographicCamera(-aspect, aspect, 1, -1, 0.1, 1000);
+                cameras.push(camera);
+
+                const renderer = new THREE.WebGLRenderer({ alpha: true });
+                renderer.setSize(container.clientWidth, container.clientHeight);
+                container.appendChild(renderer.domElement);
+                renderers.push(renderer);
+
+                const loader = new THREE.TextureLoader();
+                const flagTexture = loader.load('flag_1.png');
+                const maskTexture = loader.load('flag_1_movement.png');
+                const profileTexture1 = loader.load('milady.png');
+                const profileTexture2 = loader.load('retardio.png');
+                const flagShapeMask = loader.load('flag_1_glow.png');
+                
+                const geometry = new THREE.PlaneGeometry(0.65, 1.5, 20, 20);
+                
+                function createFlagMaterial(profileTexture, mirrorProfile) {
+                    return new THREE.ShaderMaterial({
+                        uniforms: {
+                            time: { value: 1.0 },
+                            flagTexture: { value: flagTexture },
+                            maskTexture: { value: maskTexture },
+                            profileTexture: { value: profileTexture },
+                            flagShapeMask: { value: flagShapeMask },
+                            profileSize: { value: new THREE.Vector2(0.4, 0.175) },
+                            profilePosition: { value: new THREE.Vector2(0.5, 0.55) },
+                            mirrorProfile: { value: mirrorProfile ? 1 : 0 },
+                            isHovered: { value: 0 },
+                            glowStrength: { value: 0.5 },
+                            glowWidth: { value: 0.02 }
+                        },
+                        vertexShader: `
+                            uniform float time;
+                            uniform sampler2D maskTexture;
+                            varying vec2 vUv;
+                            void main() {
+                                vUv = uv;
+                                vec3 pos = position;
+                                float mask = texture2D(maskTexture, uv).r;
+                                float wave = sin(pos.y * 10.0 + time * 2.0) * 0.05 * pos.y;
+                                pos.z += wave * mask;
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform sampler2D flagTexture;
+                            uniform sampler2D profileTexture;
+                            uniform sampler2D flagShapeMask;
+                            uniform vec2 profileSize;
+                            uniform vec2 profilePosition;
+                            uniform float mirrorProfile;
+                            uniform float isHovered;
+                            uniform float glowStrength;
+                            uniform float glowWidth;
+                            varying vec2 vUv;
+
+                            void main() {
+                                vec4 flagColor = texture2D(flagTexture, vUv);
+                                float flagShape = texture2D(flagShapeMask, vUv).r;
+                                
+                                vec2 profileUv = (vUv - profilePosition) / profileSize + 0.5;
+                                if (mirrorProfile > 0.5) {
+                                    profileUv.x = 1.0 - profileUv.x;
+                                }
+                                
+                                if (profileUv.x >= 0.0 && profileUv.x <= 1.0 && 
+                                    profileUv.y >= 0.0 && profileUv.y <= 1.0) {
+                                    vec4 profileColor = texture2D(profileTexture, profileUv);
+                                    flagColor.rgb = mix(flagColor.rgb, profileColor.rgb, profileColor.a * 0.8);
+                                }
+                                
+                                if (isHovered > 0.5) {
+                                    float glow = 0.0;
+                                    for (float x = -glowWidth; x <= glowWidth; x += 0.001) {
+                                        for (float y = -glowWidth; y <= glowWidth; y += 0.001) {
+                                            vec2 sampleUv = vUv + vec2(x, y);
+                                            float sampleShape = texture2D(flagShapeMask, sampleUv).r;
+                                            if (sampleShape > 0.5 && flagShape < 0.5) {
+                                                float dist = length(vec2(x, y));
+                                                glow += smoothstep(glowWidth, 0.0, dist);
+                                            }
+                                        }
+                                    }
+                                    glow *= glowStrength / (glowWidth * 2000.0);
+                                    flagColor.rgb += vec3(1.0, 0.7, 0.3) * glow * (1.0 - flagShape);
+                                }
+                                
+                                gl_FragColor = flagColor;
+                            }
+                        `,
+                        side: THREE.DoubleSide
+                    });
+                }
+
+                const material1 = createFlagMaterial(profileTexture1, false);
+                const material2 = createFlagMaterial(profileTexture2, true);
+
+                const flag1 = new THREE.Mesh(geometry, material1);
+                const flag2 = new THREE.Mesh(geometry, material2);
+
+                // Adjust positioning for proper alignment
+                flag1.position.x = -aspect + 0.325;  // Left-aligned
+                flag2.position.x = aspect - 0.325;   // Right-aligned
+
+                scene.add(flag1);
+                scene.add(flag2);
+
+                flags.push([flag1, flag2]);
+
+                camera.position.z = 1;
+
+                renderer.domElement.addEventListener('mousemove', (event) => onFlagMouseMove(event, container, [flag1, flag2]));
+                renderer.domElement.addEventListener('mouseleave', () => {
+                    flag1.material.uniforms.isHovered.value = 0;
+                    flag2.material.uniforms.isHovered.value = 0;
+                });
+            });
+        }
+
+        function onDocumentMouseMove(event) {
+            mouseX = (event.clientX - window.innerWidth / 2) * 0.0005;
+            mouseY = (event.clientY - window.innerHeight / 2) * 0.0005;
+        }
+
+        function onFlagMouseMove(event, container, containerFlags) {
+            const rect = container.getBoundingClientRect();
+            const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            containerFlags.forEach((flag, index) => {
+                const flagWidth = 1;  // Width of the flag
+                const flagLeft = index === 0 ? -1 : 0;  // Left edge of the flag's hover area
+                const flagRight = index === 0 ? 0 : 1;  // Right edge of the flag's hover area
+
+                if (x >= flagLeft && x <= flagRight && y >= -1 && y <= 1) {
+                    flag.material.uniforms.isHovered.value = 1;
+                } else {
+                    flag.material.uniforms.isHovered.value = 0;
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            targetRotationY += (mouseX - targetRotationY) * 0.05;
+            targetRotationX += (mouseY - targetRotationX) * 0.05;
+
+            if (backgroundMesh) {
+                backgroundMesh.rotation.y = targetRotationY;
+                backgroundMesh.rotation.x = targetRotationX;
+            }
+
+            flags.forEach(containerFlags => {
+                containerFlags.forEach(flag => {
+                    flag.material.uniforms.time.value += 0.05;
+                });
+            });
+
+            backgroundRenderer.render(backgroundScene, backgroundCamera);
+            scenes.forEach((scene, index) => {
+                renderers[index].render(scene, cameras[index]);
+            });
+        }
+
+        function onWindowResize() {
+            backgroundCamera.aspect = window.innerWidth / window.innerHeight;
+            backgroundCamera.updateProjectionMatrix();
+            backgroundRenderer.setSize(window.innerWidth, window.innerHeight);
+
+            const containers = [document.getElementById('container1'), document.getElementById('container2')];
+            containers.forEach((container, index) => {
+                const aspect = container.clientWidth / container.clientHeight;
+                cameras[index].left = -aspect;
+                cameras[index].right = aspect;
+                cameras[index].updateProjectionMatrix();
+                renderers[index].setSize(container.clientWidth, container.clientHeight);
+
+                // Update flag positions on resize
+                const [flag1, flag2] = flags[index];
+                flag1.position.x = -aspect + 0.325;
+                flag2.position.x = aspect - 0.325;
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
