@@ -126,9 +126,9 @@
                             void main() {
                                 vUv = uv;
                                 vec3 pos = position;
-                                float mask = texture2D(maskTexture, uv).r;
-                                float wave = sin(pos.y * 10.0 + time * 2.0) * 0.05 * pos.y;
-                                pos.z += wave * mask;
+                                float mask = texture2D(maskTexture, uv).r;  // Using only the red channel for simplicity
+                                float waveY = sin(pos.y * 5.0 + time * 0.5) * 0.01;  // Reduced frequency and amplitude
+                                pos.y += waveY * mask * smoothstep(0.2, 1.0, mask);  // Apply smoothstep to emphasize areas where mask is closer to 1.0
                                 gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
                             }
                         `,
