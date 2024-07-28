@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Epic Duel Flags with Full Hover Glow Effect</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #controls { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.7); padding: 10px; }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <select id="blendMode">
+            <option value="0">Normal</option>
+            <option value="1">Adjusted Overlay</option>
+            <option value="2">Hard Light</option>
+            <option value="3">Multiply</option>
+            <option value="4">Screen</option>
+        </select>
+        <br>
+        Blend Strength: <input type="range" id="blendStrength" min="0" max="1" step="0.01" value="0.8">
+        <br>
+        Brightness: <input type="range" id="brightness" min="-1" max="1" step="0.01" value="0">
+        <br>
+        Contrast: <input type="range" id="contrast" min="0" max="2" step="0.01" value="1">
+        <br>
+        Glow Strength: <input type="range" id="glowStrength" min="0" max="1" step="0.01" value="0.5">
+        <br>
+        Glow Width: <input type="range" id="glowWidth" min="0" max="0.1" step="0.001" value="0.02">
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, flag1, flag2;
+        let mouse = new THREE.Vector2();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const loader = new THREE.TextureLoader();
+            const flagTexture = loader.load('flag_1.png');
+            const maskTexture = loader.load('flag_1_movement.png');
+            const profileTexture1 = loader.load('milady.png');
+            const profileTexture2 = loader.load('retardio.png'); // Load a second profile image
+            const flagShapeMask = loader.load('flag_1_glow.png');
+            
+            const geometry = new THREE.PlaneGeometry(0.5, 1.5, 20, 20);
+            
+            function createFlagMaterial(profileTexture, mirrorProfile) {
+                return new THREE.ShaderMaterial({
+                    uniforms: {
+                        time: { value: 1.0 },
+                        flagTexture: { value: flagTexture },
+                        maskTexture: { value: maskTexture },
+                        profileTexture: { value: profileTexture },
+                        flagShapeMask: { value: flagShapeMask },
+                        profileSize: { value: new THREE.Vector2(0.4, 0.175) },
+                        profilePosition: { value: new THREE.Vector2(0.5, 0.55) },
+                        blendMode: { value: 0 },
+                        blendStrength: { value: 0.8 },
+                        brightness: { value: 0.0 },
+                        contrast: { value: 1.0 },
+                        glowStrength: { value: 0.5 },
+                        glowWidth: { value: 0.02 },
+                        mousePos: { value: new THREE.Vector2(0.5, 0.5) },
+                        isHovered: { value: 0 },
+                        mirrorProfile: { value: mirrorProfile ? 1 : 0 }
+                    },
+                    vertexShader: `
+                        uniform float time;
+                        uniform sampler2D maskTexture;
+                        varying vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            vec3 pos = position;
+                            float mask = texture2D(maskTexture, uv).r;
+                            float wave = sin(pos.y * 10.0 + time * 2.0) * 0.05 * pos.y;
+                            pos.z += wave * mask;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D flagTexture;
+                        uniform sampler2D profileTexture;
+                        uniform sampler2D flagShapeMask;
+                        uniform vec2 profileSize;
+                        uniform vec2 profilePosition;
+                        uniform int blendMode;
+                        uniform float blendStrength;
+                        uniform float brightness;
+                        uniform float contrast;
+                        uniform float glowStrength;
+                        uniform float glowWidth;
+                        uniform vec2 mousePos;
+                        uniform float isHovered;
+                        uniform float mirrorProfile;
+                        varying vec2 vUv;
+
+                        vec3 blendNormal(vec3 base, vec3 blend) {
+                            return blend;
+                        }
+
+                        vec3 blendAdjustedOverlay(vec3 base, vec3 blend) {
+                            return mix(
+                                2.0 * base * blend,
+                                1.0 - 2.0 * (1.0 - base) * (1.0 - blend),
+                                step(0.5, blend)
+                            );
+                        }
+
+                        vec3 blendHardLight(vec3 base, vec3 blend) {
+                            return mix(
+                                2.0 * base * blend,
+                                1.0 - 2.0 * (1.0 - base) * (1.0 - blend),
+                                step(0.5, base)
+                            );
+                        }
+
+                        vec3 blendMultiply(vec3 base, vec3 blend) {
+                            return base * blend;
+                        }
+
+                        vec3 blendScreen(vec3 base, vec3 blend) {
+                            return 1.0 - (1.0 - base) * (1.0 - blend);
+                        }
+
+                        vec3 adjustBrightnessContrast(vec3 color, float brightness, float contrast) {
+                            return (color - 0.5) * contrast + 0.5 + brightness;
+                        }
+
+                        void main() {
+                            vec4 flagColor = texture2D(flagTexture, vUv);
+                            float flagShape = texture2D(flagShapeMask, vUv).r;
+                            
+                            vec2 profileUv = (vUv - profilePosition) / profileSize + 0.5;
+
+                            // Flip the profileUv.x if mirrorProfile is 1
+                            if (mirrorProfile > 0.5) {
+                                profileUv.x = 1.0 - profileUv.x;
+                            }
+                            
+                            if (profileUv.x >= 0.0 && profileUv.x <= 1.0 && 
+                                profileUv.y >= 0.0 && profileUv.y <= 1.0) {
+                                vec4 profileColor = texture2D(profileTexture, profileUv);
+                                
+                                vec3 blendedColor;
+                                if (blendMode == 0) blendedColor = blendNormal(flagColor.rgb, profileColor.rgb);
+                                else if (blendMode == 1) blendedColor = blendAdjustedOverlay(flagColor.rgb, profileColor.rgb);
+                                else if (blendMode == 2) blendedColor = blendHardLight(flagColor.rgb, profileColor.rgb);
+                                else if (blendMode == 3) blendedColor = blendMultiply(flagColor.rgb, profileColor.rgb);
+                                else if (blendMode == 4) blendedColor = blendScreen(flagColor.rgb, profileColor.rgb);
+                                
+                                blendedColor = adjustBrightnessContrast(blendedColor, brightness, contrast);
+                                
+                                float distFromCenter = length((profileUv - 0.5) * 2.0);
+                                float blendFactor = profileColor.a * (1.0 - smoothstep(0.8, 1.0, distFromCenter)) * blendStrength;
+                                
+                                flagColor.rgb = mix(flagColor.rgb, blendedColor, blendFactor);
+                            }
+                            
+                            // Calculate glow
+                            float glow = 0.0;
+                            if (isHovered > 0.5) {
+                                for (float x = -glowWidth; x <= glowWidth; x += 0.001) {
+                                    for (float y = -glowWidth; y <= glowWidth; y += 0.001) {
+                                        vec2 sampleUv = vUv + vec2(x, y);
+                                        float sampleShape = texture2D(flagShapeMask, sampleUv).r;
+                                        if (sampleShape > 0.5 && flagShape < 0.5) {
+                                            float dist = length(vec2(x, y));
+                                            glow += smoothstep(glowWidth, 0.0, dist);
+                                        }
+                                    }
+                                }
+                                glow *= glowStrength / (glowWidth * 2000.0); // Normalize glow
+                            }
+                            
+                            // Add glow to flag color
+                            flagColor.rgb += vec3(1.0, 0.7, 0.3) * glow * (1.0 - flagShape);
+                            
+                            gl_FragColor = flagColor;
+                        }
+                    `,
+                    side: THREE.DoubleSide
+                });
+            }
+
+            const material1 = createFlagMaterial(profileTexture1, false);
+            const material2 = createFlagMaterial(profileTexture2, true);
+
+            flag1 = new THREE.Mesh(geometry, material1);
+            flag2 = new THREE.Mesh(geometry, material2);
+
+            flag1.position.x = -0.3;
+            flag2.position.x = 0.3;
+
+            scene.add(flag1);
+            scene.add(flag2);
+
+            camera.position.z = 2;
+
+            // Set up UI controls
+            const controls = ['blendMode', 'blendStrength', 'brightness', 'contrast', 'glowStrength', 'glowWidth'];
+            controls.forEach(control => {
+                document.getElementById(control).addEventListener('change', updateUniforms);
+                document.getElementById(control).addEventListener('input', updateUniforms);
+            });
+
+            // Set up mouse move and hover listeners
+            renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+            renderer.domElement.addEventListener('mouseenter', () => {
+                flag1.material.uniforms.isHovered.value = 1;
+                flag2.material.uniforms.isHovered.value = 1;
+            }, false);
+            renderer.domElement.addEventListener('mouseleave', () => {
+                flag1.material.uniforms.isHovered.value = 0;
+                flag2.material.uniforms.isHovered.value = 0;
+            }, false);
+        }
+
+        function updateUniforms(e) {
+            const value = e.target.type === 'range' ? parseFloat(e.target.value) : parseInt(e.target.value);
+            flag1.material.uniforms[e.target.id].value = value;
+            flag2.material.uniforms[e.target.id].value = value;
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+            if (flag1 && flag2) {
+                let vector = new THREE.Vector3(mouse.x, mouse.y, 0.5);
+                vector.unproject(camera);
+                let dir = vector.sub(camera.position).normalize();
+                let distance = - camera.position.z / dir.z;
+                let pos = camera.position.clone().add(dir.multiplyScalar(distance));
+
+                flag1.material.uniforms.mousePos.value.set((pos.x + 0.55) / 0.5, (pos.y + 0.75) / 1.5);
+                flag2.material.uniforms.mousePos.value.set((pos.x - 0.05) / 0.5, (pos.y + 0.75) / 1.5);
+
+                let flagBounds1 = new THREE.Box2(new THREE.Vector2(-0.55, -0.75), new THREE.Vector2(-0.05, 0.75));
+                let flagBounds2 = new THREE.Box2(new THREE.Vector2(0.05, -0.75), new THREE.Vector2(0.55, 0.75));
+
+                flag1.material.uniforms.isHovered.value = flagBounds1.containsPoint(new THREE.Vector2(pos.x, pos.y)) ? 1 : 0;
+                flag2.material.uniforms.isHovered.value = flagBounds2.containsPoint(new THREE.Vector2(pos.x, pos.y)) ? 1 : 0;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            flag1.material.uniforms.time.value += 0.05;
+            flag2.material.uniforms.time.value += 0.05;
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize, false);
+
+        init();
+        animate();
+    </script>
+</body>
+</html>
