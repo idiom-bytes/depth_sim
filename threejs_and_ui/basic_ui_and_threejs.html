@@ -37,17 +37,42 @@
       z-index: 2;
       text-align: center;
     }
+    .character-table {
+        border: 1px solid black;
+        border-collapse: collapse;
+        width: 100%;
+    }
+    .character-row {
+        border: 1px solid black;
+        text-align: left;
+        padding: 5px;
+    }
+    .character-name {
+        text-align: left;
+    }
+    .character-value {
+        border: 1px solid black;
+        text-align: right;
+    }
   </style>
 </head>
 <body>
   <div id="controls">
     <div id="text-container">
-      Normal Adjusted Overlay Hard Light Multiply Screen<br>
-      Blend Strength:<br>
-      Brightness:<br>
-      Contrast:<br>
-      Glow Strength:<br>
-      Glow Width:
+        <table id="character-table" class="character-table">
+            <tr class="character-row">
+                <td class="character-name">Kirby</td>
+                <td class="character-value">100</td>
+            </tr>
+            <tr class="character-row">
+                <td class="character-name">Link</td>
+                <td class="character-value">5</td>
+            </tr>
+            <tr class="character-row">
+                <td class="character-name">Mario</td>
+                <td class="character-value">7</td>
+            </tr>
+        </table>
     </div>
     <div id="scene-container"></div>
   </div>
