@@ -42,6 +42,7 @@
         let mouseX = 0, mouseY = 0;
         let targetRotationY = 0, targetRotationX = 0;
         let stats;
+        let isPhone = false;
 
         function init() {
             initBackground();
@@ -256,9 +257,25 @@
             }
         }
 
+        function initDeviceOrientation() {
+            if (window.DeviceOrientationEvent) {
+                window.addEventListener('deviceorientation', onDeviceOrientation, false);
+                isPhone = true;
+            }
+        }
+
+        function onDeviceOrientation(event) {
+            if (event.beta && event.gamma) {
+                targetRotationX = THREE.MathUtils.degToRad(event.beta) * 0.1;
+                targetRotationY = THREE.MathUtils.degToRad(event.gamma) * 0.1;
+            }
+        }
+
         function onDocumentMouseMove(event) {
-            mouseX = (event.clientX - window.innerWidth / 2) * 0.0005;
-            mouseY = (event.clientY - window.innerHeight / 2) * 0.0005;
+            if (!isPhone) {
+                mouseX = (event.clientX - window.innerWidth / 2) * 0.0005;
+                mouseY = (event.clientY - window.innerHeight / 2) * 0.0005;
+            }
         }
 
         function onFlagMouseMove(event, container, containerFlags) {
@@ -283,8 +300,10 @@
             requestAnimationFrame(animate);
             stats.begin();
 
-            targetRotationY += (mouseX - targetRotationY) * 0.05;
-            targetRotationX += (mouseY - targetRotationX) * 0.05;
+            if (!isPhone) {
+                targetRotationY += (mouseX - targetRotationY) * 0.05;
+                targetRotationX += (mouseY - targetRotationX) * 0.05;
+            }
 
             if (backgroundMesh) {
                 backgroundMesh.rotation.y = targetRotationY;
