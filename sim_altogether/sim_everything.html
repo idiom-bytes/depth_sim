@@ -24,6 +24,7 @@
         }
         #container1 { background-color: rgba(128, 0, 128, 0.1); }
         #container2 { background-color: rgba(255, 255, 0, 0.1); }
+        #stats { position: absolute; top: 0; left: 0; }
         canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     </style>
 </head>
@@ -34,15 +35,18 @@
         <div id="container2" class="container"></div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js"></script>
     <script>
         let scenes = [], cameras = [], renderers = [], flags = [];
         let backgroundScene, backgroundCamera, backgroundRenderer, backgroundMesh;
         let mouseX = 0, mouseY = 0;
         let targetRotationY = 0, targetRotationX = 0;
+        let stats;
 
         function init() {
             initBackground();
             initFlags();
+            initStats();
             window.addEventListener('resize', onWindowResize, false);
             document.addEventListener('mousemove', onDocumentMouseMove, false);
             animate();
@@ -51,7 +55,7 @@
         function initBackground() {
             backgroundScene = new THREE.Scene();
             backgroundCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            backgroundRenderer = new THREE.WebGLRenderer();
+            backgroundRenderer = new THREE.WebGLRenderer({ canvas: document.getElementById('backgroundCanvas') });
             backgroundRenderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(backgroundRenderer.domElement);
 
@@ -79,7 +83,7 @@
             directionalLight.position.set(1, 1, 1);
             backgroundScene.add(directionalLight);
 
-            backgroundCamera.position.z = 2;
+            backgroundCamera.position.z = 1.5;
         }
 
         function initFlags() {
@@ -93,7 +97,7 @@
                 const camera = new THREE.OrthographicCamera(-aspect, aspect, 1, -1, 0.1, 1000);
                 cameras.push(camera);
 
-                const renderer = new THREE.WebGLRenderer({ alpha: true });
+                const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
                 renderer.setSize(container.clientWidth, container.clientHeight);
                 container.appendChild(renderer.domElement);
                 renderers.push(renderer);
@@ -105,7 +109,7 @@
                 const profileTexture2 = loader.load('retardio.png');
                 const flagShapeMask = loader.load('flag_1_glow.png');
                 
-                const geometry = new THREE.PlaneGeometry(0.65, 1.5, 20, 20);
+                const geometry = new THREE.PlaneGeometry(0.65, 1.75, 20, 20);
                 
                 function createFlagMaterial(profileTexture, mirrorProfile) {
                     return new THREE.ShaderMaterial({
@@ -193,7 +197,9 @@
 
                 // Adjust positioning for proper alignment
                 flag1.position.x = -aspect + 0.325;  // Left-aligned
+                flag1.position.y = -0.15;  // Left-aligned
                 flag2.position.x = aspect - 0.325;   // Right-aligned
+                flag2.position.y = -0.15;   // Right-aligned
 
                 scene.add(flag1);
                 scene.add(flag2);
@@ -208,6 +214,46 @@
                     flag2.material.uniforms.isHovered.value = 0;
                 });
             });
+        }
+
+        let lastTime = performance.now();
+        let frames = 0;
+        let fps = 0;
+
+        function createCustomStats() {
+            const statsDiv = document.createElement('div');
+            statsDiv.id = 'customStats';
+            statsDiv.style.cssText = 'position:absolute;top:0;left:0;background:rgba(0,0,0,0.5);color:white;padding:5px;font-family:monospace;font-size:12px;z-index:1000;';
+            document.body.appendChild(statsDiv);
+            
+            return {
+                begin: () => {},
+                end: () => {
+                    const time = performance.now();
+                    frames++;
+                    if (time >= lastTime + 1000) {
+                        fps = Math.round((frames * 1000) / (time - lastTime));
+                        lastTime = time;
+                        frames = 0;
+                        statsDiv.textContent = `FPS: ${fps}`;
+                    }
+                }
+            };
+        }
+
+        function initStats() {
+            try {
+                stats = new (window.Stats || Stats)();
+                if (!stats || typeof stats.showPanel !== 'function') {
+                    throw new Error('Invalid Stats object');
+                }
+                stats.showPanel(0);
+                stats.dom.style.cssText = 'position:absolute;top:0;left:0;z-index:1000;';
+                document.body.appendChild(stats.dom);
+            } catch (error) {
+                console.warn('Error initializing Stats.js, using custom FPS counter:', error);
+                stats = createCustomStats();
+            }
         }
 
         function onDocumentMouseMove(event) {
@@ -235,6 +281,7 @@
 
         function animate() {
             requestAnimationFrame(animate);
+            stats.begin();
 
             targetRotationY += (mouseX - targetRotationY) * 0.05;
             targetRotationX += (mouseY - targetRotationX) * 0.05;
@@ -254,12 +301,17 @@
             scenes.forEach((scene, index) => {
                 renderers[index].render(scene, cameras[index]);
             });
+
+            stats.end();
         }
 
         function onWindowResize() {
-            backgroundCamera.aspect = window.innerWidth / window.innerHeight;
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            
+            backgroundCamera.aspect = width / height;
             backgroundCamera.updateProjectionMatrix();
-            backgroundRenderer.setSize(window.innerWidth, window.innerHeight);
+            backgroundRenderer.setSize(width, height);
 
             const containers = [document.getElementById('container1'), document.getElementById('container2')];
             containers.forEach((container, index) => {
@@ -272,7 +324,9 @@
                 // Update flag positions on resize
                 const [flag1, flag2] = flags[index];
                 flag1.position.x = -aspect + 0.325;
+                flag1.position.y = -0.15;
                 flag2.position.x = aspect - 0.325;
+                flag2.position.y = -0.15;
             });
         }
 
