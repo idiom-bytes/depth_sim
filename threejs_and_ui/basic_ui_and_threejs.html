@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>HTML Controls with Three.js Background</title>
+  <style>
+    body {
+      margin: 0;
+      background-color: #ffd700; /* Golden yellow background color */
+    }
+    #controls {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 1;
+      padding: 20px;
+      width: 600px;
+      height: 600px;
+      background-color: rgba(255, 255, 255, 0.5);
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    #scene-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+    #text-container {
+      z-index: 2;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <div id="text-container">
+      Normal Adjusted Overlay Hard Light Multiply Screen<br>
+      Blend Strength:<br>
+      Brightness:<br>
+      Contrast:<br>
+      Glow Strength:<br>
+      Glow Width:
+    </div>
+    <div id="scene-container"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Three.js code
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ alpha: true });
+    const controlsContainer = document.getElementById('controls');
+    const sceneContainer = document.getElementById('scene-container');
+    const controlsRect = controlsContainer.getBoundingClientRect();
+    renderer.setSize(controlsRect.width, controlsRect.height);
+    sceneContainer.appendChild(renderer.domElement);
+
+    const geometry = new THREE.PlaneGeometry(controlsRect.width, controlsRect.height);
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        resolution: { value: new THREE.Vector2(controlsRect.width, controlsRect.height) }
+      },
+      vertexShader: `
+        void main() {
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float time;
+        uniform vec2 resolution;
+
+        const float PI = 3.14159265358979323846;
+
+        float rand(vec2 co) {
+          return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        }
+
+        void main() {
+          vec2 uv = gl_FragCoord.xy / resolution.xy;
+          vec2 center = vec2(0.5, 0.5);
+          vec3 color = vec3(0.0);
+
+          for (float i = 0.0; i < 50.0; i++) {
+            float angle = rand(vec2(i, time * 0.1)) * 2.0 * PI;
+            float radius = rand(vec2(i, time * 0.2)) * 0.5;
+            vec2 offset = vec2(cos(angle), sin(angle)) * radius;
+            float dist = length(uv - (center + offset));
+
+            float brightness = exp(-dist * 5.0) * 0.1;
+            color += vec3(rand(vec2(i, 0.0)), rand(vec2(i, 1.0)), rand(vec2(i, 2.0))) * brightness;
+          }
+
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `,
+      transparent: true
+    });
+    const plane = new THREE.Mesh(geometry, material);
+    scene.add(plane);
+
+    camera.position.z = 1;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const elapsedTime = Date.now() / 1000;
+      material.uniforms.time.value = elapsedTime;
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
