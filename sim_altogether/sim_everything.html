@@ -51,23 +51,26 @@
         function initBackground() {
             backgroundScene = new THREE.Scene();
             backgroundCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            backgroundRenderer = new THREE.WebGLRenderer({ canvas: document.getElementById('backgroundCanvas') });
+            backgroundRenderer = new THREE.WebGLRenderer();
             backgroundRenderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(backgroundRenderer.domElement);
 
             const loader = new THREE.TextureLoader();
             const colorTexture = loader.load('depth_sim.png');
-            const depthTexture = loader.load('depth_sim_depth_map.png');
+            const depthTexture = loader.load('depth_sim_depth_map', createDisplacedMesh);
 
-            const geometry = new THREE.PlaneGeometry(3, 3, 500, 500);
-            const material = new THREE.MeshPhongMaterial({
-                map: colorTexture,
-                displacementMap: depthTexture,
-                displacementScale: 0.3,
-                side: THREE.DoubleSide
-            });
+            function createDisplacedMesh() {
+                const geometry = new THREE.PlaneGeometry(3, 3, 500, 500);
+                const material = new THREE.MeshPhongMaterial({
+                    map: colorTexture,
+                    displacementMap: depthTexture,
+                    displacementScale: 0.85,
+                    side: THREE.DoubleSide
+                });
 
-            backgroundMesh = new THREE.Mesh(geometry, material);
-            backgroundScene.add(backgroundMesh);
+                backgroundMesh = new THREE.Mesh(geometry, material);
+                backgroundScene.add(backgroundMesh);
+            }
 
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             backgroundScene.add(ambientLight);
