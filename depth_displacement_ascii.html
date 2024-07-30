@@ -114,14 +114,16 @@
 
         let mesh;
         let displacementScale = 0.85;
+        let depthScale = 0.1;
+        let asciiScale = 1.0;
         let meshDetail = 500;
         let mouseSensitivity = 0.0001;
         let mouseX = 0, mouseY = 0;
         let targetRotationY = 0, targetRotationX = 0;
-        let meshSize = 25.5;
-        let meshPosition = new THREE.Vector3(1.7, 3.9, 0);
-        let meshRotation = new THREE.Euler(0.5, 0, 0);
-        let cameraAnchorPoint = new THREE.Vector3(-1.4, -5.3, 5);
+        let meshSize = 19.7;
+        let meshPosition = new THREE.Vector3(1.5, 3.2, -5);
+        let meshRotation = new THREE.Euler(0.0, -0.1, 0);
+        let cameraAnchorPoint = new THREE.Vector3(-1.4, -1.9, 5);
         let cameraLookAtPoint = new THREE.Vector3(-0.6, -0.7, 0);
         let quaternion = new THREE.Quaternion();
 
@@ -132,48 +134,65 @@
 
         const vertexShader = `
             varying vec2 vUv;
-            
+            varying float vDepth;
+            uniform sampler2D depthMap;
+            uniform float displacementScale;
+
             void main() {
                 vUv = uv;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                vec4 modelPosition = modelMatrix * vec4(position, 1.0);
+                vDepth = texture2D(depthMap, uv).r;
+                modelPosition.z += vDepth * displacementScale * 10.0;
+                gl_Position = projectionMatrix * viewMatrix * modelPosition;
             }
         `;
 
         const fragmentShader = `
             uniform sampler2D colorTexture;
             uniform sampler2D depthMap;
-            uniform vec2 resolution;
-            uniform float asciiScale;
             uniform float depthScale;
-
+            uniform float asciiScale;
+            uniform vec2 resolution;
+            uniform bool showDepth;
             varying vec2 vUv;
+            varying float vDepth;
 
-            const vec3 ASCII[6] = vec3[](
-                vec3(0.0),      // Dark (space)
-                vec3(0.2),      // .
-                vec3(0.4),      // :
-                vec3(0.6),      // i
-                vec3(0.8),      // H
-                vec3(1.0)       // @
+            const float ASCII[6] = float[](
+                0.0,  // Dark (space)
+                0.2,  // .
+                0.4,  // :
+                0.6,  // i
+                0.8,  // H
+                1.0   // @
             );
 
             void main() {
+                if (showDepth) {
+                    gl_FragColor = vec4(vec3(vDepth), 1.0);
+                    return;
+                }
+
                 vec2 pixelSize = 1.0 / resolution;
                 vec2 asciiUV = floor(vUv / pixelSize / asciiScale) * pixelSize * asciiScale;
                 
                 vec4 color = texture2D(colorTexture, asciiUV);
                 float depth = texture2D(depthMap, asciiUV).r;
                 
-                float brightness = (color.r + color.g + color.b) / 2.0;
-                int index = int(brightness * 10.0);
+                float brightness = (color.r + color.g + color.b) / 3.0;
+                int index = int(clamp(brightness * 15.0, 0.0, 5.0));
                 
-                vec3 ascii = ASCII[index];
+                float ascii = ASCII[index];
                 
                 // Apply depth effect
-                ascii *= 2.0 - depth * depthScale;
+                ascii *= 1.0 - depth * depthScale;
                 
+                // Blend the ASCII pattern with the original color
                 vec3 finalColor = color.rgb * ascii;
-        
+                
+                // Apply displacement shading
+                float depthFactor = 1.0 - (vDepth * depthScale);
+                finalColor *= depthFactor;
+
                 gl_FragColor = vec4(finalColor, 1.0);
             }
         `;
@@ -181,14 +200,16 @@
         function createDisplacedMesh() {
             if (mesh) scene.remove(mesh);
 
-            const geometry = new THREE.PlaneGeometry(meshSize, meshSize);
+            const geometry = new THREE.PlaneGeometry(meshSize, meshSize, meshDetail, meshDetail);
             const material = new THREE.ShaderMaterial({
                 uniforms: {
                     colorTexture: { value: colorTexture },
                     depthMap: { value: depthTexture },
+                    displacementScale: { value: displacementScale },
+                    depthScale: { value: depthScale },
+                    asciiScale: { value: asciiScale },
                     resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-                    asciiScale: { value: 1.5 },  // Adjust this to change ASCII character size
-                    depthScale: { value: 0.1 }   // Adjust this to change depth effect intensity
+                    showDepth: { value: false }
                 },
                 vertexShader: vertexShader,
                 fragmentShader: fragmentShader,
