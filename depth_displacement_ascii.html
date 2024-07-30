@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js Depth Map Displacement with Mouse Look and Size/Position Controls</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .slider-container {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="slider-container">
+            <label for="displacementScale">Displacement Scale: </label>
+            <input type="range" id="displacementScale" min="0" max="1" step="0.01" value="0.85">
+            <span id="displacementScaleValue">0.85</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshDetail">Mesh Detail: </label>
+            <input type="range" id="meshDetail" min="10" max="1000" step="10" value="500">
+            <span id="meshDetailValue">500</span>
+        </div>
+        <div class="slider-container">
+            <label for="mouseSensitivity">Mouse Sensitivity: </label>
+            <input type="range" id="mouseSensitivity" min="0.0001" max="0.001" step="0.0001" value="0.0005">
+            <span id="mouseSensitivityValue">0.0001</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshSize">Mesh Size: </label>
+            <input type="range" id="meshSize" min="0.1" max="50" step="0.1" value="15">
+            <span id="meshSizeValue">15</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshX">Mesh X Position: </label>
+            <input type="range" id="meshX" min="-5" max="5" step="0.1" value="0">
+            <span id="meshXValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshY">Mesh Y Position: </label>
+            <input type="range" id="meshY" min="-5" max="5" step="0.1" value="0">
+            <span id="meshYValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshZ">Mesh Z Position: </label>
+            <input type="range" id="meshZ" min="-5" max="5" step="0.1" value="0">
+            <span id="meshZValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshRotationX">Mesh Rotation X: </label>
+            <input type="range" id="meshRotationX" min="-1" max="1" step="0.01" value="0">
+            <span id="meshRotationXValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshRotationY">Mesh Rotation Y: </label>
+            <input type="range" id="meshRotationY" min="-1" max="1" step="0.01" value="0">
+            <span id="meshRotationYValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="meshRotationZ">Mesh Rotation Z: </label>
+            <input type="range" id="meshRotationZ" min="-1" max="1" step="0.01" value="0">
+            <span id="meshRotationZValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="cameraAnchorX">Camera Anchor Point A X: </label>
+            <input type="range" id="cameraAnchorX" min="-10" max="10" step="0.1" value="-1.4">
+            <span id="cameraAnchorXValue">-1.4</span>
+        </div>
+        <div class="slider-container">
+            <label for="cameraAnchorY">Camera Anchor Point A Y: </label>
+            <input type="range" id="cameraAnchorY" min="-10" max="10" step="0.1" value="-1.9">
+            <span id="cameraAnchorYValue">-1.9</span>
+        </div>
+        <div class="slider-container">
+            <label for="cameraAnchorZ">Camera Anchor Point A Z: </label>
+            <input type="range" id="cameraAnchorZ" min="-10" max="10" step="0.1" value="5">
+            <span id="cameraAnchorZValue">5</span>
+        </div>
+        <div class="slider-container">
+            <label for="cameraLookAtX">Camera Look-at Point B X: </label>
+            <input type="range" id="cameraLookAtX" min="-2" max="2" step="0.1" value="0">
+            <span id="cameraLookAtXValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="cameraLookAtY">Camera Look-at Point B Y: </label>
+            <input type="range" id="cameraLookAtY" min="-2" max="2" step="0.1" value="0">
+            <span id="cameraLookAtYValue">0</span>
+        </div>
+        <div class="slider-container">
+            <label for="cameraLookAtZ">Camera Look-at Point B Z: </label>
+            <input type="range" id="cameraLookAtZ" min="-2" max="2" step="0.1" value="0">
+            <span id="cameraLookAtZValue">0</span>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Set up the scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        let mesh;
+        let displacementScale = 0.85;
+        let meshDetail = 500;
+        let mouseSensitivity = 0.0001;
+        let mouseX = 0, mouseY = 0;
+        let targetRotationY = 0, targetRotationX = 0;
+        let meshSize = 25.5;
+        let meshPosition = new THREE.Vector3(1.7, 3.9, 0);
+        let meshRotation = new THREE.Euler(0.5, 0, 0);
+        let cameraAnchorPoint = new THREE.Vector3(-1.4, -5.3, 5);
+        let cameraLookAtPoint = new THREE.Vector3(-0.6, -0.7, 0);
+        let quaternion = new THREE.Quaternion();
+
+        // Load the textures
+        const loader = new THREE.TextureLoader();
+        const colorTexture = loader.load('depth_sim.png');
+        const depthTexture = loader.load('depth_sim_depth_map', createDisplacedMesh);
+
+        const vertexShader = `
+            varying vec2 vUv;
+            
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `;
+
+        const fragmentShader = `
+            uniform sampler2D colorTexture;
+            uniform sampler2D depthMap;
+            uniform vec2 resolution;
+            uniform float asciiScale;
+            uniform float depthScale;
+
+            varying vec2 vUv;
+
+            const vec3 ASCII[6] = vec3[](
+                vec3(0.0),      // Dark (space)
+                vec3(0.2),      // .
+                vec3(0.4),      // :
+                vec3(0.6),      // i
+                vec3(0.8),      // H
+                vec3(1.0)       // @
+            );
+
+            void main() {
+                vec2 pixelSize = 1.0 / resolution;
+                vec2 asciiUV = floor(vUv / pixelSize / asciiScale) * pixelSize * asciiScale;
+                
+                vec4 color = texture2D(colorTexture, asciiUV);
+                float depth = texture2D(depthMap, asciiUV).r;
+                
+                float brightness = (color.r + color.g + color.b) / 2.0;
+                int index = int(brightness * 10.0);
+                
+                vec3 ascii = ASCII[index];
+                
+                // Apply depth effect
+                ascii *= 2.0 - depth * depthScale;
+                
+                vec3 finalColor = color.rgb * ascii;
+        
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `;
+
+        function createDisplacedMesh() {
+            if (mesh) scene.remove(mesh);
+
+            const geometry = new THREE.PlaneGeometry(meshSize, meshSize);
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    colorTexture: { value: colorTexture },
+                    depthMap: { value: depthTexture },
+                    resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+                    asciiScale: { value: 1.5 },  // Adjust this to change ASCII character size
+                    depthScale: { value: 0.1 }   // Adjust this to change depth effect intensity
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                side: THREE.DoubleSide
+            });
+
+            mesh = new THREE.Mesh(geometry, material);
+            mesh.position.copy(meshPosition);
+            mesh.rotation.copy(meshRotation);
+            scene.add(mesh);
+        }
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+        camera.position.z = 1.5;
+
+        // Slider event listeners
+        document.getElementById('displacementScale').addEventListener('input', function(e) {
+            displacementScale = parseFloat(e.target.value);
+            document.getElementById('displacementScaleValue').textContent = displacementScale.toFixed(2);
+            if (mesh) mesh.material.displacementScale = displacementScale;
+        });
+
+        document.getElementById('meshDetail').addEventListener('input', function(e) {
+            meshDetail = parseInt(e.target.value);
+            document.getElementById('meshDetailValue').textContent = meshDetail;
+            createDisplacedMesh();
+        });
+
+        document.getElementById('mouseSensitivity').addEventListener('input', function(e) {
+            mouseSensitivity = parseFloat(e.target.value);
+            document.getElementById('mouseSensitivityValue').textContent = mouseSensitivity.toFixed(4);
+        });
+
+        document.getElementById('meshSize').addEventListener('input', function(e) {
+            meshSize = parseFloat(e.target.value);
+            document.getElementById('meshSizeValue').textContent = meshSize.toFixed(1);
+            createDisplacedMesh();
+        });
+
+        document.getElementById('meshX').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('meshXValue').textContent = value.toFixed(1);
+            if (meshPosition) meshPosition.x = value;
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('meshY').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('meshYValue').textContent = value.toFixed(1);
+            if (meshPosition) meshPosition.y = value;
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('meshZ').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('meshZValue').textContent = value.toFixed(1);
+            if (meshPosition) meshPosition.z = value;
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('meshRotationX').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('meshRotationXValue').textContent = value.toFixed(1);
+            if (meshRotation) meshRotation.x = value;
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('meshRotationY').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('meshRotationYValue').textContent = value.toFixed(1);
+            if (meshRotation) meshRotation.y = value;
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('meshRotationZ').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('meshRotationZValue').textContent = value.toFixed(1);
+            if (meshRotation) meshRotation.z = value;
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('cameraAnchorX').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('cameraAnchorXValue').textContent = value.toFixed(1);
+            if (cameraAnchorPoint) cameraAnchorPoint.x = value;
+
+            quaternion.identity();
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('cameraAnchorY').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('cameraAnchorYValue').textContent = value.toFixed(1);
+            if (cameraAnchorPoint) cameraAnchorPoint.y = value;
+
+            quaternion.identity();
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('cameraAnchorZ').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('cameraAnchorZValue').textContent = value.toFixed(1);
+            if (cameraAnchorPoint) cameraAnchorPoint.z = value;
+
+            quaternion.identity();
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('cameraLookAtX').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('cameraLookAtXValue').textContent = value.toFixed(1);
+            if (cameraLookAtPoint) cameraLookAtPoint.x = value;
+
+            quaternion.identity();
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('cameraLookAtY').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('cameraLookAtYValue').textContent = value.toFixed(1);
+            if (cameraLookAtPoint) cameraLookAtPoint.y = value;
+
+            quaternion.identity();
+            updateCameraAndMesh();
+        });
+
+        document.getElementById('cameraLookAtZ').addEventListener('input', function(e) {
+            const value = parseFloat(e.target.value);
+            document.getElementById('cameraLookAtZValue').textContent = value.toFixed(1);
+            if (cameraLookAtPoint) cameraLookAtPoint.z = value;
+            
+            quaternion.identity();
+            updateCameraAndMesh();
+        });
+
+        // Mouse move event listener
+        document.addEventListener('mousemove', onDocumentMouseMove);
+
+        function onDocumentMouseMove(event) {
+            mouseX = (event.clientX - window.innerWidth / 2) * mouseSensitivity;
+            mouseY = (event.clientY - window.innerHeight / 2) * mouseSensitivity;
+            
+            const deltaX = event.movementX * mouseSensitivity;
+            const deltaY = event.movementY * mouseSensitivity;
+
+            // Create rotation quaternions
+            const quaternionX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -deltaX);
+            const quaternionY = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -deltaY);
+
+            // Combine rotations
+            quaternion.multiplyQuaternions(quaternionX, quaternion);
+            quaternion.multiplyQuaternions(quaternionY, quaternion);
+
+            updateCameraAndMesh();
+        }
+
+        function updateCameraAndMesh() {
+            const originalDirection = new THREE.Vector3().subVectors(cameraLookAtPoint, cameraAnchorPoint);
+            const distance = originalDirection.length();
+
+            // Apply rotation to the original direction
+            const rotatedDirection = originalDirection.applyQuaternion(quaternion).normalize();
+
+            // Set camera position and orientation
+            camera.position.copy(cameraAnchorPoint);
+            camera.lookAt(cameraAnchorPoint.clone().add(rotatedDirection.multiplyScalar(distance)));
+        }
+
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (mesh) {
+                mesh.position.copy(meshPosition);
+                mesh.rotation.copy(meshRotation);
+            }
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
